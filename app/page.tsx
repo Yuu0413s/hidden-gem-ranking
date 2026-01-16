@@ -1,32 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { calculateBayesianScore, calculateSimpleAverage } from "@/utils/bayesian";
-
-// 店舗データの型定義
-type Shop = {
-  id: number;
-  name: string;
-  upVotes: number;
-  downVotes: number;
-};
-
-// 初期データ（極端な例を用意）
-const initialShops: Shop[] = [
-  { id: 1, name: "老舗A店 (高評価多数)", upVotes: 95, downVotes: 5 }, // 95%
-  { id: 2, name: "新店B店 (1件だけ高評価)", upVotes: 1, downVotes: 0 }, // 100% (単純平均だと最強になってしまう)
-  { id: 3, name: "中堅C店", upVotes: 18, downVotes: 2 }, // 90%
-  { id: 4, name: "チェーンD店", upVotes: 300, downVotes: 100 }, // 75%
-];
+// 作った裏側の処理をインポート
+import { getShops, addShop, Shop } from "./actions";
 
 export default function Home() {
-  const [shops, setShops] = useState<Shop[]>(initialShops);
+  const [shops, setShops] = useState<Shop[]>([]);
   const [sortMode, setSortMode] = useState<"simple" | "bayesian">("simple");
-
-  // 新規追加用のState
   const [newName, setNewName] = useState("");
   const [newUp, setNewUp] = useState(0);
   const [newDown, setNewDown] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  // 画面が表示されたら、DBからデータを読み込む
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const data = await getShops();
+        setShops(data);
+      } catch (error) {
+        console.error("データの取得に失敗しました", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  // 追加ボタンが押された時の処理
+  const handleAddShop = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // DBに追加
+    await addShop(newName, newUp, newDown);
+
+    // 画面のリストも最新にするために再取得
+    const data = await getShops();
+    setShops(data);
+
+    // フォームを空にする
+    setNewName("");
+    setNewUp(0);
+    setNewDown(0);
+  };
 
   // 並び替え処理
   const sortedShops = [...shops].sort((a, b) => {
@@ -37,27 +54,12 @@ export default function Home() {
     }
   });
 
-  // 店舗追加処理
-  const handleAddShop = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newShop: Shop = {
-      id: Date.now(),
-      name: newName,
-      upVotes: newUp,
-      downVotes: newDown,
-    };
-    setShops([...shops, newShop]);
-    setNewName("");
-    setNewUp(0);
-    setNewDown(0);
-  };
-
   return (
     <main className="min-h-screen p-8 bg-gray-50 text-gray-800">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-2">隠れた名店発見器</h1>
+        <h1 className="text-3xl font-bold mb-2">隠れた名店発見器 (DB保存版)</h1>
         <p className="text-gray-600 mb-8">
-          講義第5章「ベイズ推定」を用いて、レビュー数が少ない店舗の信頼性を補正します。
+          追加したデータはVercelのデータベースに保存され、リロードしても消えません。
         </p>
 
         {/* コントロールエリア */}
@@ -85,6 +87,11 @@ export default function Home() {
 
         {/* ランキング表示 */}
         <div className="grid gap-4 mb-12">
+          {loading && <p className="text-center py-10">読み込み中...</p>}
+          {!loading && sortedShops.length === 0 && (
+            <p className="text-center py-10 text-gray-500">データがありません。下から追加してください。</p>
+          )}
+
           {sortedShops.map((shop, index) => {
             const simpleAvg = calculateSimpleAverage(shop.upVotes, shop.downVotes);
             const bayesScore = calculateBayesianScore(shop.upVotes, shop.downVotes);
@@ -97,7 +104,7 @@ export default function Home() {
                     <h2 className="text-xl font-bold">{shop.name}</h2>
                   </div>
                   <p className="text-sm text-gray-500 mt-1">
-                    高評価: {shop.upVotes} / 低評価: {shop.downVotes} (計 {shop.upVotes + shop.downVotes}件)
+                    高評価: {shop.upVotes} / 低評価: {shop.downVotes}
                   </p>
                 </div>
 
